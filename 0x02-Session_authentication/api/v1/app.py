@@ -11,47 +11,35 @@ import os
 
 app = Flask(__name__)
 app.register_blueprint(app_views)
-app.config['JSONIFY_PRETTYPRINT_REGULAR'] = True
 CORS(app, resources={r"/api/v1/*": {"origins": "*"}})
 auth = None
-
-AUTH_TYPE = getenv("AUTH_TYPE")
-
-if AUTH_TYPE == 'auth':
+AUTH_TYPE = os.getenv("AUTH_TYPE")
+if AUTH_TYPE == "auth":
     from api.v1.auth.auth import Auth
     auth = Auth()
-elif AUTH_TYPE == 'basic_auth':
+elif AUTH_TYPE == "basic_auth":
     from api.v1.auth.basic_auth import BasicAuth
     auth = BasicAuth()
-elif AUTH_TYPE == 'session_auth':
-    from api.v1.auth.session_auth import SessionAuth
-    auth = SessionAuth()
-elif AUTH_TYPE == 'session_exp_auth':
-    from api.v1.auth.session_exp_auth import SessionExpAuth
-    auth = SessionExpAuth()
 
 
 @app.before_request
-def before_request():
-    """Request validation handler"""
+def bef_req():
+    """
+    Filter each request before it's handled by the proper route
+    """
     if auth is None:
         pass
     else:
-        excluded_paths = ['/api/v1/status/',
-                          '/api/v1/unauthorized/',
-                          '/api/v1/forbidden/',
-                          '/api/v1/auth_session/login/']
-        path = auth.require_auth(request.path, excluded_paths)
-        authorization_header = auth.authorization_header(request)
-        user = auth.current_user(request)
-        request.current_user = user
-        session_cookie = auth.session_cookie(request)
-
-        if path:
-            if authorization_header is None and session_cookie is None:
-                abort(401)
-            if user is None:
-                abort(403)
+        excluded = [
+            '/api/v1/status/',
+            '/api/v1/unauthorized/',
+            '/api/v1/forbidden/'
+        ]
+        if auth.require_auth(request.path, excluded):
+            if auth.authorization_header(request) is None:
+                abort(401, description="Unauthorized")
+            if auth.current_user(request) is None:
+                abort(403, description="Forbidden")
 
 
 @app.errorhandler(404)
@@ -62,15 +50,15 @@ def not_found(error) -> str:
 
 
 @app.errorhandler(401)
-def unauthorized(e) -> str:
-    """Unauthorized error handler
+def unauthorized(error) -> str:
+    """ Request unauthorized handler
     """
     return jsonify({"error": "Unauthorized"}), 401
 
 
 @app.errorhandler(403)
-def forbidden(e) -> str:
-    """Forbidden error handler
+def forbidden(error) -> str:
+    """ Request unauthorized handler
     """
     return jsonify({"error": "Forbidden"}), 403
 
@@ -78,5 +66,4 @@ def forbidden(e) -> str:
 if __name__ == "__main__":
     host = getenv("API_HOST", "0.0.0.0")
     port = getenv("API_PORT", "5000")
-
     app.run(host=host, port=port)
